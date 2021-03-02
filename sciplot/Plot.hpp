@@ -28,6 +28,7 @@
 // C++ includes
 #include <sstream>
 #include <vector>
+#include <filesystem>
 
 // sciplot includes
 #include <sciplot/Constants.hpp>
@@ -396,7 +397,7 @@ class Plot
     auto save(std::string filename) const -> void;
 
     /// Write the current plot data to the data file.
-    auto savePlotData() const -> void;
+    auto savePlotData(const std::string &subdir) const -> void;
 
     /// Toggle automatic cleaning of temporary files (enabled by default). Pass false if you want to keep your script / data files.
     /// Call cleanup() to remove those files manually.
@@ -412,6 +413,9 @@ class Plot
     /// Convert this plot object into a gnuplot formatted string.
     auto repr() const -> std::string;
 
+    /// Gets the Datafilename
+    const std::string &getDatafilename() const;
+
   private:
     static std::size_t m_counter;          ///< Counter of how many plot / singleplot objects have been instanciated in the application
     std::size_t m_id = 0;                  ///< The Plot id derived from m_counter upon construction (must be the first member due to constructor initialization order!)
@@ -420,7 +424,10 @@ class Plot
     std::size_t m_width = 0;               ///< The size of the plot in x
     std::size_t m_height = 0;              ///< The size of the plot in y
     std::string m_scriptfilename;          ///< The name of the file where the plot commands are saved
-    std::string m_datafilename;            ///< The multi data set file where data given to plot (e.g., vectors) are saved
+    std::string m_datafilename;
+
+private:
+    ///< The multi data set file where data given to plot (e.g., vectors) are saved
     std::string m_data;                    ///< The current plot data as a string
     std::size_t m_numdatasets = 0;         ///< The current number of data sets in the data file
     std::string m_xrange;                  ///< The x-range of the plot as a gnuplot formatted string (e.g., "set xrange [0:1]")
@@ -934,8 +941,13 @@ inline auto Plot::gnuplot(std::string command) -> void
 
 inline auto Plot::show() const -> void
 {
+    static size_t count = 0;
+    count++;
+    std::string subdir = "show" + std::to_string(count);
+    std::filesystem::create_directories(subdir);
+
     // Open script file and truncate it
-    std::ofstream script(m_scriptfilename);
+    std::ofstream script(subdir + "/" +  m_scriptfilename);
 
     // Add palette info. Use default palette if the user hasn't set one
     gnuplot::palettecmd(script, m_palette.empty() ? internal::DEFAULT_PALETTE : m_palette);
@@ -949,21 +961,16 @@ inline auto Plot::show() const -> void
     // Add the plot commands
     script << repr();
 
+    script << "\npause mouse close\n";
     // Add an empty line at the end and close the script to avoid crashes with gnuplot
     script << std::endl;
     script.close();
 
     // save plot data to a file
-    savePlotData();
+    savePlotData(subdir);
 
     // Show the plot
-    gnuplot::runscript(m_scriptfilename, true);
-
-    // remove the temporary files if user wants to
-    if(m_autoclean)
-    {
-        cleanup();
-    }
+    gnuplot::runscript_fork(m_scriptfilename, subdir ,m_autoclean);
 }
 
 inline auto Plot::save(std::string filename) const -> void
@@ -1001,7 +1008,7 @@ inline auto Plot::save(std::string filename) const -> void
     script.close();
 
     // save plot data to a file
-    savePlotData();
+    savePlotData("");
 
     // Save the plot as a file
     gnuplot::runscript(m_scriptfilename, false);
@@ -1013,13 +1020,19 @@ inline auto Plot::save(std::string filename) const -> void
     }
 }
 
-inline auto Plot::savePlotData() const -> void
+inline auto Plot::savePlotData(const std::string &subdir) const -> void
 {
     // Open data file, truncate it and write all current plot data to it
     if(!m_data.empty())
     {
-        std::ofstream data(m_datafilename);
-        data << m_data;
+        if(subdir.empty()){
+            std::ofstream data(m_datafilename);
+            data << m_data;
+        }
+        else {
+            std::ofstream data(subdir + "/" + m_datafilename);
+            data << m_data;
+        }
     }
 }
 
@@ -1102,5 +1115,9 @@ inline auto Plot::repr() const -> std::string
     script << std::endl;
     return script.str();
 }
+
+    const std::string &Plot::getDatafilename() const {
+        return m_datafilename;
+    }
 
 } // namespace sciplot

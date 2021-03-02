@@ -34,6 +34,7 @@
 #include <string>
 #include <type_traits>
 #include <valarray>
+#include <Windows.h>
 
 // sciplot includes
 #include <sciplot/Constants.hpp>
@@ -42,6 +43,42 @@
 
 namespace sciplot {
 namespace internal {
+
+
+        void startup(const std::string& ApplicationName)
+        {
+            LPCSTR lpApplicationName = ApplicationName.c_str();
+            // additional information
+            STARTUPINFOA si;
+            PROCESS_INFORMATION pi;
+
+            // set the size of the structures
+            ZeroMemory(&si, sizeof(si));
+            si.cb = sizeof(si);
+            ZeroMemory(&pi, sizeof(pi));
+
+            // start the program up
+            CreateProcessA
+                    (
+                            lpApplicationName,   // the path
+                            NULL,                // Command line
+                            NULL,                   // Process handle not inheritable
+                            NULL,                   // Thread handle not inheritable
+                            FALSE,                  // Set handle inheritance to FALSE
+                            CREATE_NEW_CONSOLE,     // Opens file in a separate console
+                            NULL,           // Use parent's environment block
+                            NULL,           // Use parent's starting directory
+                            &si,            // Pointer to STARTUPINFO structure
+                            &pi           // Pointer to PROCESS_INFORMATION structure
+                    );
+            // Close process and thread handles.
+            //CloseHandle(pi.hProcess);
+            //CloseHandle(pi.hThread);
+        }
+
+#undef min
+#undef max
+#undef DEFAULT_PALETTE
 
 /// Return a string for a given value of a generic type.
 template <typename T>
@@ -307,11 +344,28 @@ inline auto multiplotcmd(std::ostream& out, std::size_t rows, std::size_t column
 /// Auxiliary function to run gnuplot to show or save a script file
 // persistent == true: for show commands. show the file using GNUplot until the window is closed
 // persistent == false: for save commands. close gnuplot immediately
-inline auto runscript(std::string scriptfilename, bool persistent) -> bool
+inline auto runscript(const std::string &scriptfilename, bool persistent) -> bool
 {
     std::string command = persistent ? "gnuplot -persistent " : "gnuplot ";
     command += "\"" + scriptfilename + "\"";
     return std::system(command.c_str()) == 0;
+}
+
+/// Auxiliary function to run gnuplot to fork gnuplot and show
+inline auto runscript_fork(const std::string &scriptfilename, const std::string &folder, bool autoclean) -> void
+{
+    std::ofstream bat;
+    bat.open (scriptfilename + ".bat");
+    bat << "cd " + folder + "\n";
+    bat << "gnuplot " << "\"" + scriptfilename + "\"\n";
+    if(autoclean) {
+        bat << "cd ..\n";
+        bat << "timeout 1\n";
+        bat << "rmdir /s /q " + folder << "\n";
+        bat << "start /b \"\" cmd /c del \"%~f0\"&exit /b\n";
+    }
+    bat.close();
+    internal::startup((scriptfilename + ".bat"));
 }
 
 /// Auxiliary function to escape a output path so it can be used for GNUplot.

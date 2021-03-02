@@ -64,7 +64,7 @@ class Figure
     auto title(const std::string& title) -> Figure&;
 
     /// Write the current plot data of all plots to the data file(s).
-    auto saveplotdata() const -> void;
+    auto saveplotdata(const std::string &subdir) const -> void;
 
     /// Show the figure in a pop-up window.
     /// @note This method removes temporary files after saving if `Figure::autoclean(true)` (default).
@@ -180,17 +180,22 @@ inline auto Figure::title(const std::string& title) -> Figure&
     return *this;
 }
 
-inline auto Figure::saveplotdata() const -> void
+inline auto Figure::saveplotdata(const std::string &subdir) const -> void
 {
     for(const auto& row : m_plots)
         for(const auto& plot : row)
-            plot.savePlotData();
+            plot.savePlotData(subdir);
 }
 
 inline auto Figure::show() const -> void
 {
+    static size_t count = 0;
+    count++;
+    std::string subdir = "show_multi" + std::to_string(count);
+    std::filesystem::create_directories(subdir);
+
     // Open script file and truncate it
-    std::ofstream script(m_scriptfilename);
+    std::ofstream script(subdir + "/" +  m_scriptfilename);
 
     // Add palette info. Use default palette if the user hasn't set one
     gnuplot::palettecmd(script, m_palette.empty() ? internal::DEFAULT_PALETTE : m_palette);
@@ -204,26 +209,25 @@ inline auto Figure::show() const -> void
     // Add multiplot commands
     gnuplot::multiplotcmd(script, m_layoutrows, m_layoutcols, m_title);
 
+
     // Add the plot commands
     for(const auto& row : m_plots)
-        for(const auto& plot : row)
+        for (const auto &plot : row)
             script << plot.repr();
+
+
+
+    script << "\npause mouse close\n";
 
     // Add an empty line at the end and close the script to avoid crashes with gnuplot
     script << std::endl;
     script.close();
 
     // save plot data to file(s)
-    saveplotdata();
+    saveplotdata(subdir);
 
     // Show the figure
-    gnuplot::runscript(m_scriptfilename, true);
-
-    // remove the temporary files if user wants to
-    if(m_autoclean)
-    {
-        cleanup();
-    }
+    gnuplot::runscript_fork(m_scriptfilename,subdir, m_autoclean);
 }
 
 inline auto Figure::save(const std::string& filename) const -> void
@@ -269,7 +273,7 @@ inline auto Figure::save(const std::string& filename) const -> void
     script.close();
 
     // save plot data to file(s)
-    saveplotdata();
+    saveplotdata("");
 
     // Save the figure as a file
     gnuplot::runscript(m_scriptfilename, false);
